@@ -22,6 +22,8 @@ LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in 
 FETCH_M = 110.0  # how far to go for a better weapon mid-fight
 FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
 GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones for cubes while the enemy is far
+JINK = False  # flip strafe direction once per enemy bullet flight time, instead of at random 0.3-0.9 s
+LEAD_EMA = True  # lead far targets by their averaged velocity; False = always their current velocity
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
@@ -100,6 +102,7 @@ class Bot:
         self.last_threat_t = -1e9
         self.last_hurt_t = -1e9
         self.laser_hold_t = None
+        self.jink_tof = 0.0
         gc.collect()
         gc.freeze()
 
@@ -184,7 +187,7 @@ class Bot:
         else:
             vx, vy, vz = tr["vel"]
             tof = intercept(dx, dy, dz, vx, vy, 0.0, speed)
-            if tof > 0.3:  # far: targets jink, so lead by their average velocity instead
+            if LEAD_EMA and tof > 0.3:  # far: targets jink, so lead by their average velocity instead
                 vx, vy, vz = tr["ev"]
                 tof = intercept(dx, dy, dz, vx, vy, 0.0, speed)
         if abs(vz) > 3.0:
@@ -559,6 +562,7 @@ class Bot:
                 want = min(want, 40.0)
             bx, by = (target["pos"][0] - x) / (td + 1e-6), (target["pos"][1] - y) / (td + 1e-6)
             radial = max(-1.0, min(1.0, (td - want) / 15.0))
+            self.jink_tof = td / self.cfg["weapons"]["gun"].get("speed", 252.0)
             move = self.fight_step(x, y, bx, by, radial, t, obs, zone_ok, zc)
             boost = energy > 60 and abs(radial) > 0.9 and ("lightning" in kinds or RANGE == "close")
             label += " |fight"
@@ -645,9 +649,14 @@ class Bot:
         """Strafe across the line to the enemy (bx, by), flipping at random, sidestepping bullets and walls."""
         rng = self.rng
         if t > self.strafe_until:
-            if rng.random() < 0.6:
+            if JINK and self.jink_tof > 0:
+                # a shooter leading by our velocity misses if we reverse during the bullet's flight
                 self.strafe = -self.strafe
-            self.strafe_until = t + rng.uniform(0.3, 0.9)
+                self.strafe_until = t + max(0.3, 1.25 * self.jink_tof) * rng.uniform(0.7, 1.3)
+            else:
+                if rng.random() < 0.6:
+                    self.strafe = -self.strafe
+                self.strafe_until = t + rng.uniform(0.3, 0.9)
         # incoming bullets: step off their line
         ox = oy = 0.0
         me = obs["self"]
