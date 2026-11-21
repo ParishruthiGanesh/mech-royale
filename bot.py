@@ -28,6 +28,8 @@ STOP_T = None  # diagnostic only: stand still after this many seconds, so the sc
 CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
 KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
 CORNER = False  # with several enemies in sight, stand where buildings hide us from all but the target
+DROPS = "on"  # supply drops: "on" (go early, wait in the ring), "smart" (no long waits, give up if stuck), "off"
+ZONE_JET = False  # outside the zone and not closing on it: fly straight in over whatever is in the way
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
@@ -109,6 +111,10 @@ class Bot:
         self.jink_tof = 0.0
         self.kill_spots = []
         self.spot = None
+        self.drop_ring_t = 0.0
+        self.bad_drops = set()
+        self.out_since = None
+        self.out_d0 = 0.0
         self.spot_t = -1e9
         gc.collect()
         gc.freeze()
@@ -483,13 +489,25 @@ class Bot:
 
         drop_goal = None
         bd = 150.0 if threats else 280.0
-        for dr in obs["drops"]:
+        for dr in obs["drops"] if DROPS != "off" else ():
             pos = dr["pos"]
             d = math.hypot(pos[0] - x, pos[1] - y)
             if dr.get("holder") not in (None, me["id"]) and dr.get("progress", 0) > 1.5 and d > 30:
                 continue  # someone else has nearly got it
+            if DROPS == "smart":
+                # do not stand waiting under a falling drop, and do not go back to one we failed to hold
+                if dr["id"] in self.bad_drops or d / walk < dr["lands_in"] - 5.0 or (len(near) >= 3 and hpf > 0.5):
+                    continue
             if d < bd and d / walk < dr["lands_in"] + 20.0 and zone_ok(pos[0], pos[1]):
                 drop_goal, bd = dr, d
+        if DROPS == "smart":
+            if drop_goal is not None and bd < drop_goal.get("radius", 8.0) and drop_goal["lands_in"] <= 0:
+                self.drop_ring_t += 0.1
+                if self.drop_ring_t > drop_goal.get("capture_s", 4.0) + 5.0:  # contested: stop being a sitting target
+                    self.bad_drops.add(drop_goal["id"])
+                    self.drop_ring_t, drop_goal = 0.0, None
+            else:
+                self.drop_ring_t = 0.0
         near_cube = None
         if hpf > 0.3 or KILL_LOOT:
             cd = CUBE_M
@@ -506,9 +524,18 @@ class Bot:
                         near_cube = (k[0], k[1], k[2])
                         break
 
+        if not outside:
+            self.out_since = None
+        elif self.out_since is None:
+            self.out_since, self.out_d0 = t, d_cur
         if outside:
             move = self.nav(x, y, nc[0], nc[1], t)
             boost = True
+            if ZONE_JET and t - self.out_since > 2.5 and self.out_d0 - d_cur < 4.0 * (t - self.out_since):
+                # the path is not getting us in: jump and jet straight at the zone centre
+                dd = d_cur + 1e-6
+                move = ((zc[0] - x) / dd, (zc[1] - y) / dd)
+                jump = bool(me["grounded"])
             label += " |zone!"
         elif flee_shell is not None:
             move = flee_shell
