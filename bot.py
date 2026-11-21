@@ -21,7 +21,7 @@ FAR_M = 110.0
 LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in sight
 FETCH_M = 110.0  # how far to go for a better weapon mid-fight
 FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
-LASER_FIRST = False  # take laser upgrades before HP and armor
+LASER_FIRST = True  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
