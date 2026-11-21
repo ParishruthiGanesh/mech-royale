@@ -16,7 +16,7 @@ from world import Search, World
 
 PI = math.pi
 STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
-RANGE = "auto"  # fight distance: "auto" (by loadout), or for experiments "close" (35 m) / "far" (110 m)
+RANGE = "close"  # fight distance: "auto" (by loadout), or for experiments "close" (35 m) / "far" (110 m)
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
