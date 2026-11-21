@@ -18,6 +18,7 @@ PI = math.pi
 STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
 RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
 FAR_M = 110.0
+LOOT_IN_FIGHT = False  # walk to a known better weapon even while enemies are in sight
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
@@ -509,6 +510,13 @@ class Bot:
         elif near_cube is not None and (target is not None or danger):
             move = self.nav(x, y, near_cube[0], near_cube[1], t)
             label += " |cube"
+        elif LOOT_IN_FIGHT and target is not None and self.weapon_goal(x, y, z, kinds, zone_ok, 110.0) is not None:
+            wg = self.weapon_goal(x, y, z, kinds, zone_ok, 110.0)
+            move = self.nav(x, y, wg[0], wg[1], t)
+            if math.hypot(wg[0] - x, wg[1] - y) > 12.0:  # weave on the way so we are not a straight-line target
+                side = self.strafe * 0.5 * (1.0 if int(t * 2.0) % 2 else -1.0)
+                move = (move[0] - move[1] * side, move[1] + move[0] * side)
+            label += " |arm"
         elif target is not None:
             td = math.hypot(target["pos"][0] - x, target["pos"][1] - y)
             tw = target["weapons"]
@@ -659,6 +667,22 @@ class Bot:
                 return mx, my
         d = math.hypot(zc[0] - x, zc[1] - y) + 1e-6
         return (zc[0] - x) / d, (zc[1] - y) / d
+
+    def weapon_goal(self, x, y, z, kinds, zone_ok, limit):
+        """Position of the best known weapon pickup worth swapping to within `limit` m, or None."""
+        w = self.world
+        slot1_rank = WEAPON_RANK.get(kinds[1], 0) if len(kinds) > 1 else 0
+        best, bd = None, 1e9
+        for pid, (kind, pos, ts) in self.pickups.items():
+            gain = WEAPON_RANK.get(kind, 0) - slot1_rank
+            if pid in self.bad_pickups or kind in kinds or gain <= 0:
+                continue
+            if w is not None and abs(pos[2] - w.ground(pos[0], pos[1])) > 3.5 and abs(pos[2] - z) > 3.5:
+                continue  # on a roof
+            d = math.hypot(pos[0] - x, pos[1] - y)
+            if d < limit and d / (1.0 + 0.5 * gain) < bd and zone_ok(pos[0], pos[1]):
+                best, bd = pos, d / (1.0 + 0.5 * gain)
+        return best
 
     def loot_goal(self, obs, x, y, z, t, kinds, hpf, zone_ok, farm, ghosts):
         """Where to walk when nobody is in sight: cubes, a better weapon, a supply drop, a crate or NPC."""
