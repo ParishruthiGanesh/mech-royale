@@ -11,22 +11,20 @@ Python 3.13, standard library only. Started from the kit's Python starter.
 | `mechfight.py` | The kit's wrapper, unchanged (stdin/stdout loop, newest-observation rule). |
 | `tools/` | Dev-only helpers (not in the image): `mapcheck.py`, `sim.py`. |
 
-## How it plays
+## How it plays (submitted version)
 
-Legs and torso are decided separately each observation.
+Legs and torso are decided separately each observation. Behaviour switches are constants at the top of
+`bot.py`; the defaults are the combination that scored best.
 
-- **Zone:** always heads for the next circle early enough to be inside before the shrink starts;
-  boosts if it is ever outside. Every cover spot, strafe step and loot goal must be inside the zone.
+- **Zone:** heads for the next circle early enough to be inside before each shrink; boosts if outside.
 - **Navigation:** buildings, the stadium, low bridges and steep terrain are rasterised to a 2 m grid;
   paths are A* on a 4 m grid, run in small slices so no decision is slow. Jumps/jets when stuck.
-- **Fighting:** leads the gun (average velocity at long range), charges and releases the laser on
-  target, arcs lightning in range, lobs the mortar with a ballistic solution. Strafes with random
-  flips, sidesteps visible bullets and incoming shells, keeps a range that suits both loadouts,
-  and always faces the attacker (rear armor).
-- **Disengage:** below ~42% HP against a healthier enemy (or outnumbered) it breaks line of sight
-  behind the nearest building and waits for regeneration; re-engages above 85%.
-- **Loot:** cubes first, then a better second weapon (laser > lightning > mortar), supply drops,
-  crates and NPC drones when healthy and unobserved. Upgrade picks favor HP and armor.
+- **Fighting:** never retreats. Holds about 110 m from the target, strafing with random flips; leads
+  the gun, charges and releases the laser on target, arcs lightning, lobs the mortar. Shoots the enemy
+  it can finish soonest.
+- **Loot:** fetches a better second weapon (laser > lightning > mortar) within 110 m even mid-fight,
+  grabs nearby cubes, takes supply drops without waiting under them or circling in a contested ring.
+  Upgrades: laser damage and charge first when holding a laser, then HP and armor.
 
 ## Checks run (2026-11-21, kit `mechfight-kit.tar.gz`)
 
@@ -43,6 +41,35 @@ Run from the kit folder, with this repository at `../mech-royale`.
 
 Budget is 50 ms per decision, so the worst measured answer uses about 14% of it.
 
+## Practice results (48 matches each, scorer builders-3, starter baseline 1.15)
+
+Each row changes one thing from the row it builds on. One run wobbles by a few tenths, so only
+differences of about 0.3 or more mean much.
+
+| Version | Score |
+| --- | --- |
+| First version | 4.35 |
+| + focus weakest target, cubes mid-fight, supply drops | 4.48 |
+| Never hides (diagnostic) | 0.13 |
+| Never retreats | 4.67 |
+| + fight at 35 m / 110 m / 150 m / 80 m | 4.67 / **4.90** / 4.50 / 4.65 |
+| + pursue lost enemies | 4.71 |
+| + fetch a better weapon mid-fight (110 m) | **5.15** |
+| + fetch from 200 m / farm when hurt / cube-greedy | 4.94 / not run / 5.13 |
+| + faster dodge rhythm / + current-velocity aim | 4.81 / 5.15 (both) |
+| + collect kill drops / corner fighting | 5.06 / 5.13 |
+| + smart supply drops | **5.23** |
+| + zone escape (with and without aim change) | 4.88 |
+| + seek enemies by sound | 4.86 |
+| + laser upgrades first | **5.25** (entry: `ad1d5a6`) |
+| + rest out of sight between fights / + also break off losing fights | 5.06 / 4.71 |
+| Diagnostics: stop at 90 s / 180 s / hide for the first 120 s | 3.06 / 5.02 / 4.50 |
+
+What the diagnostics say: the score is close to the number of kills (house bots only die to us).
+About 3 kills come by 90 s and 5 by 180 s, then almost none. Starting two minutes late still gives
+about 4.5 kills, so the wall follows the kill count, not the clock: the squad sends more hunters as it
+is thinned out, and this bot does not survive that. Healing, hiding, cover and retreating did not help.
+
 ## Limitations
 
 - **Placement is unmeasured.** The kit has no match runner. `tools/sim.py` is a home-made sandbox
@@ -51,7 +78,8 @@ Budget is 50 ms per decision, so the worst measured answer uses about 14% of it.
 - Everything is 2D: it does not climb roofs on purpose and skips rooftop loot.
 - Line of sight ignores trees and low walls; canopy is not modelled.
 - Sounds and beams are not used; unseen attackers are only noticed through damage bearings.
-- Fight ranges, retreat thresholds and weapon ranking are untuned guesses.
+- Practice is against a house squad; the qualifying round and final are free-for-alls against other
+  teams' bots, which this tuning has never seen.
 
 ## License
 
