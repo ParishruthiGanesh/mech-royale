@@ -27,7 +27,7 @@ LEAD_EMA = True  # lead far targets by their averaged velocity; False = always t
 STOP_T = None  # diagnostic only: stand still after this many seconds, so the score shows kills made by then
 CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
 KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
-CORNER = False  # with several enemies in sight, stand where buildings hide us from all but the target
+CORNER = True  # with several enemies in sight, stand where buildings hide us from all but the target
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
