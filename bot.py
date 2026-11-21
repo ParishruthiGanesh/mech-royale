@@ -15,8 +15,12 @@ import mechfight as mf
 from world import Search, World
 
 PI = math.pi
-STYLE = "normal"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
+STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
+RANGE = "auto"  # fight distance: "auto" (by loadout), or for experiments "close" (35 m) / "far" (110 m)
+PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
+if RANGE == "close":
+    WEAPON_RANK = {"lightning": 3, "laser": 2, "mortar": 1}
 UPGRADE_ORDER = [
     "plating", "armor", "laser_damage", "gun_damage", "nanites", "laser_charge", "gun_rate",
     "lightning_efficiency", "servos", "gun_velocity", "gyros", "gun_mag", "lightning_chain",
@@ -515,15 +519,23 @@ class Bot:
                 want = 125.0
             else:
                 want = 60.0
+            if RANGE == "close":
+                want = 35.0 if "lightning" not in kinds else 28.0
+            elif RANGE == "far":
+                want = 110.0
             if target["hp"] < 300 and hpf > 0.3:
                 want = min(want, 40.0)
             bx, by = (target["pos"][0] - x) / (td + 1e-6), (target["pos"][1] - y) / (td + 1e-6)
             radial = max(-1.0, min(1.0, (td - want) / 15.0))
             move = self.fight_step(x, y, bx, by, radial, t, obs, zone_ok, zc)
-            boost = energy > 60 and abs(radial) > 0.9 and "lightning" in kinds
+            boost = energy > 60 and abs(radial) > 0.9 and ("lightning" in kinds or RANGE == "close")
             label += " |fight"
         else:
             goal = self.loot_goal(obs, x, y, z, t, kinds, hpf, zone_ok, farm, ghosts)
+            if PURSUE and ghosts and hpf > 0.4 and not obs["cubes"]:
+                gtr = min(ghosts, key=lambda tr: t - tr["t"])
+                if zone_ok(gtr["pos"][0], gtr["pos"][1]):
+                    goal = (gtr["pos"][0], gtr["pos"][1])
             if goal is None:
                 if (self.roam is None or t - self.roam_t > 30.0 or math.hypot(self.roam[0] - x, self.roam[1] - y) < 8.0
                         or math.hypot(self.roam[0] - nc[0], self.roam[1] - nc[1]) > max(nr - 10.0, 0.0)):
