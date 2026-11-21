@@ -18,7 +18,7 @@ PI = math.pi
 STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
 RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
 FAR_M = 110.0
-LOOT_IN_FIGHT = False  # walk to a known better weapon even while enemies are in sight
+LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in sight
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
