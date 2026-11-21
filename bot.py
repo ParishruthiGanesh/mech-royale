@@ -18,7 +18,10 @@ PI = math.pi
 STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
 RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
 FAR_M = 110.0
-LOOT_IN_FIGHT = False  # walk to a known better weapon even while enemies are in sight
+LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in sight
+FETCH_M = 110.0  # how far to go for a better weapon mid-fight
+FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
+LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
@@ -308,7 +311,7 @@ class Bot:
                 sc = tr["hp"] * (1.0 + math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) / 120.0)
                 if sc < best_score:
                     target, best_score = tr, sc
-        farm_ok = hpf > 0.75 and not threats and t - self.last_threat_t > 3.0
+        farm_ok = hpf > FARM_HP and not threats and t - self.last_threat_t > 3.0
         farm = None
         if target is None:
             near_npcs = [tr for tr in npcs if can_see(tr)]
@@ -510,8 +513,8 @@ class Bot:
         elif near_cube is not None and (target is not None or danger):
             move = self.nav(x, y, near_cube[0], near_cube[1], t)
             label += " |cube"
-        elif LOOT_IN_FIGHT and target is not None and self.weapon_goal(x, y, z, kinds, zone_ok, 110.0) is not None:
-            wg = self.weapon_goal(x, y, z, kinds, zone_ok, 110.0)
+        elif LOOT_IN_FIGHT and target is not None and self.weapon_goal(x, y, z, kinds, zone_ok, FETCH_M) is not None:
+            wg = self.weapon_goal(x, y, z, kinds, zone_ok, FETCH_M)
             move = self.nav(x, y, wg[0], wg[1], t)
             if math.hypot(wg[0] - x, wg[1] - y) > 12.0:  # weave on the way so we are not a straight-line target
                 side = self.strafe * 0.5 * (1.0 if int(t * 2.0) % 2 else -1.0)
@@ -591,6 +594,8 @@ class Bot:
         if obs["offer"]:
             choices = obs["offer"]["choices"]
             rank = {u: i for i, u in enumerate(UPGRADE_ORDER)}
+            if LASER_FIRST and "laser" in kinds:
+                rank["laser_damage"], rank["laser_charge"] = -2, -1
             act["pick"] = min(range(len(choices)), key=lambda i: rank.get(choices[i]["id"], 99))
         slot1_rank = WEAPON_RANK.get(kinds[1], 0) if len(kinds) > 1 else 0
         for p in obs["pickups"]:
