@@ -64,11 +64,15 @@ differences of about 0.3 or more mean much.
 | + laser upgrades first | **5.25** (entry: `ad1d5a6`) |
 | + rest out of sight between fights / + also break off losing fights | 5.06 / 4.71 |
 | Diagnostics: stop at 90 s / 180 s / hide for the first 120 s | 3.06 / 5.02 / 4.50 |
+| + ideas from Team Kanyaraasi's public bot (written independently): all five / engage gate + finish fast / engage gate only | 4.88 / 5.19 / 5.13 |
+| + dodge charging lasers / + also shoot laser carriers first | 5.21 / 4.79 |
 
 What the diagnostics say: the score is close to the number of kills (house bots only die to us).
 About 3 kills come by 90 s and 5 by 180 s, then almost none. Starting two minutes late still gives
 about 4.5 kills, so the wall follows the kill count, not the clock: the squad sends more hunters as it
-is thinned out, and this bot does not survive that. Healing, hiding, cover and retreating did not help.
+is thinned out, and this bot does not survive that. Healing, hiding, cover, retreating, only fighting
+hunters that are already engaging, and dodging charging lasers (which did about 3/4 of the damage in
+the kit's recorded match) did not measurably help.
 
 ## Limitations
 
