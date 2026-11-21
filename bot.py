@@ -23,7 +23,7 @@ FETCH_M = 110.0  # how far to go for a better weapon mid-fight
 FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
 GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones for cubes while the enemy is far
 JINK = False  # flip strafe direction once per enemy bullet flight time, instead of at random 0.3-0.9 s
-LEAD_EMA = True  # lead far targets by their averaged velocity; False = always their current velocity
+LEAD_EMA = False  # lead far targets by their averaged velocity; False = always their current velocity
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
