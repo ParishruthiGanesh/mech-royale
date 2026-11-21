@@ -25,6 +25,8 @@ GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones 
 JINK = False  # flip strafe direction once per enemy bullet flight time, instead of at random 0.3-0.9 s
 LEAD_EMA = True  # lead far targets by their averaged velocity; False = always their current velocity
 STOP_T = None  # diagnostic only: stand still after this many seconds, so the score shows kills made by then
+CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
+KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
@@ -104,6 +106,7 @@ class Bot:
         self.last_hurt_t = -1e9
         self.laser_hold_t = None
         self.jink_tof = 0.0
+        self.kill_spots = []
         gc.collect()
         gc.freeze()
 
@@ -276,6 +279,10 @@ class Bot:
             elif et == "take_failed" and e.get("reason") in ("gone", "have"):
                 self.bad_pickups.add(e["id"])
                 self.pickups.pop(e["id"], None)
+            elif et == "kill" and KILL_LOOT:
+                vt = self.tracks.get(e.get("target"))
+                if vt is not None:
+                    self.kill_spots.append((vt["pos"][0], vt["pos"][1], vt["pos"][2], t))
             elif et == "took":
                 self.pickups.pop(e["id"], None)
 
@@ -481,12 +488,20 @@ class Bot:
             if d < bd and d / walk < dr["lands_in"] + 20.0 and zone_ok(pos[0], pos[1]):
                 drop_goal, bd = dr, d
         near_cube = None
-        if hpf > 0.3:
-            cd = 30.0
+        if hpf > 0.3 or KILL_LOOT:
+            cd = CUBE_M
             for c in obs["cubes"]:
                 d = math.hypot(c["pos"][0] - x, c["pos"][1] - y)
                 if d < cd and abs(c["pos"][2] - z) < 4.0 and zone_ok(c["pos"][0], c["pos"][1]):
                     near_cube, cd = c["pos"], d
+            if near_cube is None and self.kill_spots:
+                # no cube in sight yet: head for where the last victim fell
+                self.kill_spots = [k for k in self.kill_spots if t - k[3] < 25.0 and math.hypot(k[0] - x, k[1] - y) > 6.0]
+                for k in self.kill_spots:
+                    d = math.hypot(k[0] - x, k[1] - y)
+                    if d < 170.0 and abs(k[2] - z) < 8.0 and zone_ok(k[0], k[1]):
+                        near_cube = (k[0], k[1], k[2])
+                        break
 
         if outside:
             move = self.nav(x, y, nc[0], nc[1], t)
@@ -532,6 +547,8 @@ class Bot:
             label += " |retreat"
         elif near_cube is not None and (target is not None or danger):
             move = self.nav(x, y, near_cube[0], near_cube[1], t)
+            if KILL_LOOT:
+                boost = energy > 30 and math.hypot(near_cube[0] - x, near_cube[1] - y) > 25.0
             label += " |cube"
         elif LOOT_IN_FIGHT and target is not None and self.weapon_goal(x, y, z, kinds, zone_ok, FETCH_M) is not None:
             wg = self.weapon_goal(x, y, z, kinds, zone_ok, FETCH_M)
