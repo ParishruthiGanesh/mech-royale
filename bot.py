@@ -15,7 +15,7 @@ import mechfight as mf
 from world import Search, World
 
 PI = math.pi
-STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
+STYLE = "berserk"  # "berserk" (never retreats), "normal", "smart" (disengage only when clearly losing), "pacifist"
 RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
 FAR_M = 110.0
 LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in sight
@@ -32,7 +32,9 @@ CORNER = False  # with several enemies in sight, stand where buildings hide us f
 DROPS = "smart"  # supply drops: "on" (go early, wait in the ring), "smart" (no long waits, give up if stuck), "off"
 ZONE_JET = False  # outside the zone and not closing on it: fly straight in over whatever is in the way
 SEEK = False  # nobody in sight: walk toward the last weapon sound heard instead of farming or roaming
-LASER_FIRST = False  # take laser upgrades before HP and armor
+LASER_FIRST = True  # take laser upgrades before HP and armor (scored best)
+REST = False  # between fights: no crate/drone shooting (it resets regen), hold still out of sight until healed
+REST_HP = 0.92
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
@@ -372,7 +374,7 @@ class Bot:
                 cand = [tr for tr in npcs if can_see(tr) and math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) < 70.0]
                 if cand:
                     side = min(cand, key=lambda tr: tr["hp"])
-        farm_ok = hpf > FARM_HP and not threats and t - self.last_threat_t > 3.0
+        farm_ok = hpf > (max(FARM_HP, REST_HP) if REST else FARM_HP) and not threats and t - self.last_threat_t > 3.0
         farm = None
         if target is None:
             near_npcs = [tr for tr in npcs if can_see(tr)]
@@ -470,16 +472,24 @@ class Bot:
         # retreat state (hysteresis)
         near = [tr for tr in threats if math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) < 160]
         danger = near + [g for g in ghosts if t - g["t"] < 6.0 and math.hypot(g["pos"][0] - x, g["pos"][1] - y) < 120]
-        if not self.retreat:
-            if danger and target is not None:
-                weak = hpf < 0.42 and target["hp"] > hp * 0.75
-                swarmed = len(near) >= 2 and hpf < 0.7
-                if weak or swarmed:
+        if STYLE != "smart":
+            if not self.retreat:
+                if danger and target is not None:
+                    weak = hpf < 0.42 and target["hp"] > hp * 0.75
+                    swarmed = len(near) >= 2 and hpf < 0.7
+                    if weak or swarmed:
+                        self.retreat = True
+                elif danger and hpf < 0.5:
                     self.retreat = True
-            elif danger and hpf < 0.5:
-                self.retreat = True
-        else:
-            if hpf > 0.85 or (not danger and t - self.last_threat_t > 8.0) or (target is not None and target["hp"] < 200 and hpf > 0.2):
+            else:
+                if hpf > 0.85 or (not danger and t - self.last_threat_t > 8.0) or (target is not None and target["hp"] < 200 and hpf > 0.2):
+                    self.retreat = False
+        if STYLE == "smart":
+            if not self.retreat:
+                losing = target is not None and hpf < 0.35 and target["hp"] > hp
+                swarmed = len(near) >= 2 and hpf < 0.5
+                self.retreat = bool(danger) and (losing or swarmed)
+            elif hpf > 0.9 or (not danger and t - self.last_threat_t > 10.0) or (target is not None and target["hp"] < 150):
                 self.retreat = False
         if peace:
             self.retreat = bool(danger)
@@ -674,6 +684,16 @@ class Bot:
                 goal = self.roam
                 if hpf < 0.8 and t - self.last_threat_t < 15.0 and not shrinking:
                     goal = None  # hurt and nobody in sight: stand still (silent) and heal
+            if REST and hpf < REST_HP and not shrinking and not must_go:
+                cube_close = goal is not None and any(math.hypot(c["pos"][0] - x, c["pos"][1] - y) < 20.0 for c in obs["cubes"])
+                if not cube_close:
+                    goal = None
+                    watchers = [g_ for g_ in ghosts if t - g_["t"] < 8.0]
+                    if watchers and not self.hidden_from(x, y, watchers[:3]):
+                        if self.cover is None or t - self.cover_t > 1.0:
+                            self.cover, self.cover_t = self.find_cover(x, y, watchers[:3], zone_ok), t
+                        goal = self.cover
+                    label += " |rest"
             move = self.nav(x, y, goal[0], goal[1], t) if goal else (0.0, 0.0)
 
         # ---- unstick: commanded to move but not moving
