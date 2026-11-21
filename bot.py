@@ -35,6 +35,11 @@ SEEK = False  # nobody in sight: walk toward the last weapon sound heard instead
 LASER_FIRST = True  # take laser upgrades before HP and armor (scored best)
 REST = False  # between fights: no crate/drone shooting (it resets regen), hold still out of sight until healed
 REST_HP = 0.92
+GATE = False  # only fight house bots that are already engaging us (close, hit us, closing in, aiming at us, nearly dead)
+FINISH = False  # close to 20 m on a weak target; release the laser early once the charge already kills
+IDLE_STILL = False  # nothing to fetch: stand still (silent) and spin the torso for all-round vision instead of roaming
+FIGHT_BOOST = False  # boost-strafe in fights, with energy hysteresis (stop at 28%, resume at 70%)
+CUBE_HURT_M = 30.0  # mid-fight cube radius when at or below half HP
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
@@ -115,6 +120,8 @@ class Bot:
         self.jink_tof = 0.0
         self.kill_spots = []
         self.spot = None
+        self.hit_by = {}  # mech id -> last time it damaged us
+        self.boost_ok = True
         self.heard = None  # (x, y, t, rank) of the best recent sound made by someone we cannot see
         self.drop_ring_t = 0.0
         self.bad_drops = set()
@@ -266,7 +273,7 @@ class Bot:
                 tr["ev"] = [ev[0] * 0.7 + v[0] * 0.3, ev[1] * 0.7 + v[1] * 0.3, ev[2] * 0.7 + v[2] * 0.3]
             npc = m["kind"] == "npc"
             scale = 1.0 + self.size_per_cube * m.get("cubes", 0)
-            tr.update(id=i, pos=m["pos"], vel=v, t=t, npc=npc, hp=m.get("hp", 1400.0), max_hp=m.get("max_hp", 1400.0),
+            tr.update(id=i, pos=m["pos"], vel=v, t=t, npc=npc, aim=m.get("aim", (0.0, 0.0)), hp=m.get("hp", 1400.0), max_hp=m.get("max_hp", 1400.0),
                       weapons=m.get("weapons", ()), charging=m.get("charging", False),
                       ch=(self.npc_h * 0.5 if npc else self.mech_h * 0.5 * scale),
                       r=(self.npc_r if npc else self.mech_r * scale))
@@ -288,6 +295,8 @@ class Bot:
             if et == "damaged":
                 if e.get("weapon") != "zone":
                     self.last_hurt_t = t
+                    if e.get("by") is not None:
+                        self.hit_by[e["by"]] = t
                 if e.get("bearing") is not None:
                     self.look_yaw, self.look_until = e["bearing"], t + 1.5
             elif et == "take_failed" and e.get("reason") in ("gone", "have"):
@@ -348,9 +357,28 @@ class Bot:
             px, py, pz = tr["pos"]
             return w is None or abs(pz - z) > 6.0 or w.los(x, y, px, py)
 
+        endgame = obs["alive"] <= 3 or nr <= 70.0
+
+        def engaging(tr):
+            """Is this house bot already in a fight with us? Shooting the others only pulls more hunters in."""
+            px, py = tr["pos"][0], tr["pos"][1]
+            d = math.hypot(px - x, py - y)
+            if d > 240.0:
+                return False
+            if endgame or d < 60.0 or t - self.hit_by.get(tr["id"], -1e9) < 6.0:
+                return True
+            closing = -((px - x) * tr["vel"][0] + (py - y) * tr["vel"][1]) / (d + 1e-6)
+            if closing > 3.0 and d < 180.0:
+                return True
+            if tr["hp"] < 0.4 * tr["max_hp"] and d < 160.0:
+                return True
+            return d < 190.0 and abs(wrap(tr["aim"][0] - math.atan2(y - py, x - px))) < 0.22
+
         target = None
         best_score = 1e18
         for tr in threats:  # the threat we can finish soonest: low HP and close, with a clear line
+            if GATE and not engaging(tr):
+                continue
             if can_see(tr):
                 sc = tr["hp"] * (1.0 + math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) / 120.0)
                 if sc < best_score:
@@ -430,6 +458,13 @@ class Bot:
                             aim = a  # line the beam up for the release
                         # hold until full and lined up; never hold into the automatic discharge
                         release = charge >= full - 0.01 and (lined or t - self.laser_hold_t > full + ws.get("hold_s", 2.0) - 0.5)
+                        if FINISH and lined and not release and charge >= ws.get("min_charge", 0.15):
+                            mn = ws.get("min_frac", 0.35)
+                            est = ws.get("damage", 315.0) * (mn + (1.0 - mn) * min(1.0, charge / full))
+                            est *= 1.0 + 0.04 * min(me["cubes"], 10)
+                            if "mortar" in shoot.get("weapons", ()):
+                                est *= 1.0 + ws.get("cookoff", 0.6)
+                            release = 0.85 * est >= shoot["hp"]
                         fire[s] = not release
                         if release:
                             aim = a
@@ -540,7 +575,7 @@ class Bot:
                 self.drop_ring_t = 0.0
         near_cube = None
         if hpf > 0.3 or KILL_LOOT:
-            cd = CUBE_M
+            cd = CUBE_M if hpf > 0.5 else min(CUBE_M, CUBE_HURT_M)
             for c in obs["cubes"]:
                 d = math.hypot(c["pos"][0] - x, c["pos"][1] - y)
                 if d < cd and abs(c["pos"][2] - z) < 4.0 and zone_ok(c["pos"][0], c["pos"][1]):
@@ -647,11 +682,20 @@ class Bot:
                 want = FAR_M
             if target["hp"] < 300 and hpf > 0.3:
                 want = min(want, 40.0)
+            if FINISH and target["hp"] < 0.38 * target["max_hp"] and hpf > 0.42 and len(near) <= 2:
+                want = 20.0
             bx, by = (target["pos"][0] - x) / (td + 1e-6), (target["pos"][1] - y) / (td + 1e-6)
             radial = max(-1.0, min(1.0, (td - want) / 15.0))
             self.jink_tof = td / self.cfg["weapons"]["gun"].get("speed", 252.0)
             move = self.fight_step(x, y, bx, by, radial, t, obs, zone_ok, zc)
             boost = energy > 60 and abs(radial) > 0.9 and ("lightning" in kinds or RANGE == "close")
+            if FIGHT_BOOST:
+                emax = max(1.0, me.get("max_energy", 100.0))
+                if energy < 0.28 * emax:
+                    self.boost_ok = False
+                elif energy > 0.70 * emax:
+                    self.boost_ok = True
+                boost = self.boost_ok and td < 130.0
             label += " |fight"
         else:
             goal = self.loot_goal(obs, x, y, z, t, kinds, hpf, zone_ok, farm, ghosts)
@@ -684,6 +728,9 @@ class Bot:
                 goal = self.roam
                 if hpf < 0.8 and t - self.last_threat_t < 15.0 and not shrinking:
                     goal = None  # hurt and nobody in sight: stand still (silent) and heal
+            if IDLE_STILL and goal is self.roam and nr > 35.0:
+                goal = None
+                label += " |hold"
             if REST and hpf < REST_HP and not shrinking and not must_go:
                 cube_close = goal is not None and any(math.hypot(c["pos"][0] - x, c["pos"][1] - y) < 20.0 for c in obs["cubes"])
                 if not cube_close:
@@ -721,7 +768,7 @@ class Bot:
             elif move and (abs(move[0]) + abs(move[1])) > 0.3:
                 aim = [math.atan2(move[1], move[0]) + 1.0 * math.sin(t * 1.6), 0.0]
             else:
-                aim = [wrap(t * 1.4), 0.0]
+                aim = [wrap(t * (3.5 if IDLE_STILL else 1.4)), 0.0]
 
         # ---- loot interactions
         if obs["offer"]:
