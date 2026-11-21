@@ -30,6 +30,7 @@ KILL_LOOT = False  # after a kill, run to where the victim died to collect its c
 CORNER = False  # with several enemies in sight, stand where buildings hide us from all but the target
 DROPS = "smart"  # supply drops: "on" (go early, wait in the ring), "smart" (no long waits, give up if stuck), "off"
 ZONE_JET = False  # outside the zone and not closing on it: fly straight in over whatever is in the way
+SEEK = False  # nobody in sight: walk toward the last weapon sound heard instead of farming or roaming
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
@@ -111,6 +112,7 @@ class Bot:
         self.jink_tof = 0.0
         self.kill_spots = []
         self.spot = None
+        self.heard = None  # (x, y, t, rank) of the best recent sound made by someone we cannot see
         self.drop_ring_t = 0.0
         self.bad_drops = set()
         self.out_since = None
@@ -295,6 +297,22 @@ class Bot:
             elif et == "took":
                 self.pickups.pop(e["id"], None)
 
+        if SEEK:
+            rank_of = {"near": 3, "mid": 2, "far": 1}
+            guess = {"near": 40.0, "mid": 110.0, "far": 230.0}
+            for sd_ in obs["sounds"]:
+                if sd_["kind"] not in ("gun", "laser", "laser_charge", "mortar", "lightning", "crate", "boost", "step", "jet", "reload"):
+                    continue
+                b = sd_["bearing"]
+                # skip sounds that a mech we already track could have made
+                if any(not tr["npc"] and abs(wrap(math.atan2(tr["pos"][1] - y, tr["pos"][0] - x) - b)) < 0.35 for tr in self.tracks.values()):
+                    continue
+                r = rank_of.get(sd_["dist"], 1)
+                if self.heard is None or t - self.heard[2] > 6.0 or r >= self.heard[3]:
+                    g_ = guess.get(sd_["dist"], 230.0)
+                    self.heard = (x + g_ * math.cos(b), y + g_ * math.sin(b), t, r)
+                    if not seen_now:
+                        self.look_yaw, self.look_until = b, t + 1.2
         threats = sorted((tr for tr in self.tracks.values() if not tr["npc"] and tr["id"] in seen_now),
                          key=lambda tr: math.hypot(tr["pos"][0] - x, tr["pos"][1] - y))
         ghosts = [tr for tr in self.tracks.values() if not tr["npc"] and tr["id"] not in seen_now]
@@ -625,6 +643,18 @@ class Bot:
             label += " |fight"
         else:
             goal = self.loot_goal(obs, x, y, z, t, kinds, hpf, zone_ok, farm, ghosts)
+            if SEEK and hpf > 0.5 and not obs["cubes"] and self.weapon_goal(x, y, z, kinds, zone_ok, FETCH_M) is None:
+                hunt = None
+                if ghosts:
+                    gtr = min(ghosts, key=lambda tr: t - tr["t"])
+                    hunt = (gtr["pos"][0], gtr["pos"][1])
+                elif self.heard is not None and t - self.heard[2] < 25.0:
+                    hunt = (self.heard[0], self.heard[1])
+                    if math.hypot(hunt[0] - x, hunt[1] - y) < 25.0:
+                        self.heard, hunt = None, None  # got there and nobody is here
+                if hunt is not None and math.hypot(hunt[0] - zc[0], hunt[1] - zc[1]) < zr - 10.0:
+                    goal = hunt
+                    label += " |seek"
             if PURSUE and ghosts and hpf > 0.4 and not obs["cubes"]:
                 gtr = min(ghosts, key=lambda tr: t - tr["t"])
                 if zone_ok(gtr["pos"][0], gtr["pos"][1]):
