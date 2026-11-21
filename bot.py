@@ -15,7 +15,7 @@ import mechfight as mf
 from world import Search, World
 
 PI = math.pi
-STYLE = "normal"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
+STYLE = "pacifist"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 UPGRADE_ORDER = [
     "plating", "armor", "laser_damage", "gun_damage", "nanites", "laser_charge", "gun_rate",
