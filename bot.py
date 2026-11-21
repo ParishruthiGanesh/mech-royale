@@ -295,10 +295,12 @@ class Bot:
             return w is None or abs(pz - z) > 6.0 or w.los(x, y, px, py)
 
         target = None
-        for tr in threats:  # closest threat with a clear line; a nearly dead one first
+        best_score = 1e18
+        for tr in threats:  # the threat we can finish soonest: low HP and close, with a clear line
             if can_see(tr):
-                if target is None or (tr["hp"] < 250 and math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) < 150):
-                    target = tr
+                sc = tr["hp"] * (1.0 + math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) / 120.0)
+                if sc < best_score:
+                    target, best_score = tr, sc
         farm_ok = hpf > 0.75 and not threats and t - self.last_threat_t > 3.0
         farm = None
         if target is None:
@@ -435,6 +437,23 @@ class Bot:
             if dd < splash:
                 flee_shell = ((x - lx) / dd, (y - ly) / dd) if dd > 0.5 else (-vy / (math.hypot(vx, vy) + 1e-6), vx / (math.hypot(vx, vy) + 1e-6))
 
+        drop_goal = None
+        bd = 150.0 if threats else 280.0
+        for dr in obs["drops"]:
+            pos = dr["pos"]
+            d = math.hypot(pos[0] - x, pos[1] - y)
+            if dr.get("holder") not in (None, me["id"]) and dr.get("progress", 0) > 1.5 and d > 30:
+                continue  # someone else has nearly got it
+            if d < bd and d / walk < dr["lands_in"] + 20.0 and zone_ok(pos[0], pos[1]):
+                drop_goal, bd = dr, d
+        near_cube = None
+        if hpf > 0.3:
+            cd = 30.0
+            for c in obs["cubes"]:
+                d = math.hypot(c["pos"][0] - x, c["pos"][1] - y)
+                if d < cd and abs(c["pos"][2] - z) < 4.0 and zone_ok(c["pos"][0], c["pos"][1]):
+                    near_cube, cd = c["pos"], d
+
         if outside:
             move = self.nav(x, y, nc[0], nc[1], t)
             boost = True
@@ -450,6 +469,14 @@ class Bot:
             move = self.nav(x, y, gx, gy, t)
             boost = over / walk > max(0.0, zone["shrink_end"] - t) * 0.7 or (bool(threats) and energy > 50)
             label += " |zone"
+        elif drop_goal is not None and (danger or hpf < 0.95 or drop_goal["lands_in"] < 12.0 or bd < 60.0):
+            pos, ring = drop_goal["pos"], drop_goal.get("radius", 8.0)
+            if bd < ring - 2.0:  # inside the ring: keep moving in a small circle while it captures
+                move = self.nav(x, y, pos[0] + ring * 0.45 * math.cos(t * 1.3), pos[1] + ring * 0.45 * math.sin(t * 1.3), t)
+            else:
+                move = self.nav(x, y, pos[0], pos[1], t)
+                boost = energy > 40 and (bool(danger) or drop_goal["lands_in"] <= 0)
+            label += " |drop"
         elif self.retreat and danger:
             hid = self.hidden_from(x, y, danger[:3])
             closest = min(math.hypot(e["pos"][0] - x, e["pos"][1] - y) for e in danger)
@@ -469,6 +496,9 @@ class Bot:
                     move = self.fight_step(x, y, ax / ad, ay / ad, 1.0, t, obs, zone_ok, zc)
                 boost = energy > 15
             label += " |retreat"
+        elif near_cube is not None and (target is not None or danger):
+            move = self.nav(x, y, near_cube[0], near_cube[1], t)
+            label += " |cube"
         elif target is not None:
             td = math.hypot(target["pos"][0] - x, target["pos"][1] - y)
             tw = target["weapons"]
@@ -640,14 +670,13 @@ class Bot:
                 best, bd = pos, d
         if best is not None:
             return best
-        if not ghosts or hpf < 0.6:
-            for dr in obs["drops"]:
-                pos = dr["pos"]
-                d = math.hypot(pos[0] - x, pos[1] - y)
-                if dr.get("holder") is None and d < 260 and d / 11.0 < dr["lands_in"] + 25 and zone_ok(pos[0], pos[1]) and d < bd:
-                    best, bd = pos, d
-            if best is not None:
-                return best
+        for dr in obs["drops"]:  # nothing better to do: wait at a drop that is still falling
+            pos = dr["pos"]
+            d = math.hypot(pos[0] - x, pos[1] - y)
+            if d < 280 and zone_ok(pos[0], pos[1]) and d < bd:
+                best, bd = pos, d
+        if best is not None:
+            return best
         if farm is not None:
             fx, fy = farm["pos"][0], farm["pos"][1]
             d = math.hypot(fx - x, fy - y)
