@@ -15,6 +15,7 @@ import mechfight as mf
 from world import Search, World
 
 PI = math.pi
+STYLE = "normal"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 UPGRADE_ORDER = [
     "plating", "armor", "laser_damage", "gun_damage", "nanites", "laser_charge", "gun_rate",
@@ -319,7 +320,7 @@ class Bot:
                 if best is not None:
                     farm = {"id": -1, "pos": best, "vel": (0.0, 0.0, 0.0), "ev": (0.0, 0.0, 0.0), "ch": self.crate_h * 0.5,
                             "r": self.crate_r, "npc": False, "hp": 300.0, "weapons": (), "crate": True}
-        shoot = target or farm
+        shoot = (target if STYLE != "pacifist" else None) or farm
 
         # ---- torso: aim and triggers
         fire = [False, False]
@@ -415,6 +416,10 @@ class Bot:
         else:
             if hpf > 0.85 or (not danger and t - self.last_threat_t > 8.0) or (target is not None and target["hp"] < 200 and hpf > 0.2):
                 self.retreat = False
+        if STYLE == "pacifist":
+            self.retreat = bool(danger)
+        elif STYLE == "berserk":
+            self.retreat = False
         if must_go or outside:
             self.cover = None
 
