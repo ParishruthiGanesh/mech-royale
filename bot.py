@@ -24,6 +24,7 @@ FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
 GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones for cubes while the enemy is far
 JINK = False  # flip strafe direction once per enemy bullet flight time, instead of at random 0.3-0.9 s
 LEAD_EMA = True  # lead far targets by their averaged velocity; False = always their current velocity
+PEACE_T = 0.0  # diagnostic only: hide and hold fire at mechs until this many seconds, then fight normally
 STOP_T = None  # diagnostic only: stand still after this many seconds, so the score shows kills made by then
 CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
 KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
@@ -382,7 +383,8 @@ class Bot:
                     farm = tr
             if farm is None and farm_ok and self.crates:
                 farm = crate_target(70.0)
-        shoot = (target if STYLE != "pacifist" else None) or farm
+        peace = STYLE == "pacifist" or t < PEACE_T
+        shoot = (target if not peace else None) or farm
 
         # ---- torso: aim and triggers
         fire = [False, False]
@@ -479,7 +481,7 @@ class Bot:
         else:
             if hpf > 0.85 or (not danger and t - self.last_threat_t > 8.0) or (target is not None and target["hp"] < 200 and hpf > 0.2):
                 self.retreat = False
-        if STYLE == "pacifist":
+        if peace:
             self.retreat = bool(danger)
         elif STYLE == "berserk":
             self.retreat = False
