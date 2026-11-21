@@ -25,8 +25,8 @@ GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones 
 JINK = False  # flip strafe direction once per enemy bullet flight time, instead of at random 0.3-0.9 s
 LEAD_EMA = True  # lead far targets by their averaged velocity; False = always their current velocity
 STOP_T = None  # diagnostic only: stand still after this many seconds, so the score shows kills made by then
-CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
-KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
+CUBE_M = 140.0  # mid-fight, go for visible cubes within this distance
+KILL_LOOT = True  # after a kill, run to where the victim died to collect its cubes (and weapons)
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
