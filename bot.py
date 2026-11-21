@@ -16,7 +16,8 @@ from world import Search, World
 
 PI = math.pi
 STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mechs, always hides) / "berserk" (never retreats)
-RANGE = "auto"  # fight distance: "auto" (by loadout), or for experiments "close" (35 m) / "far" (110 m)
+RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
+FAR_M = 110.0
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
@@ -522,7 +523,7 @@ class Bot:
             if RANGE == "close":
                 want = 35.0 if "lightning" not in kinds else 28.0
             elif RANGE == "far":
-                want = 110.0
+                want = FAR_M
             if target["hp"] < 300 and hpf > 0.3:
                 want = min(want, 40.0)
             bx, by = (target["pos"][0] - x) / (td + 1e-6), (target["pos"][1] - y) / (td + 1e-6)
