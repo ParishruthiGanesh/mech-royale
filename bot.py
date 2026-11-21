@@ -27,6 +27,7 @@ LEAD_EMA = True  # lead far targets by their averaged velocity; False = always t
 STOP_T = None  # diagnostic only: stand still after this many seconds, so the score shows kills made by then
 CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
 KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
+CORNER = False  # with several enemies in sight, stand where buildings hide us from all but the target
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
@@ -107,6 +108,8 @@ class Bot:
         self.laser_hold_t = None
         self.jink_tof = 0.0
         self.kill_spots = []
+        self.spot = None
+        self.spot_t = -1e9
         gc.collect()
         gc.freeze()
 
@@ -563,6 +566,13 @@ class Bot:
             side_w = self.strafe * 0.5 * (1.0 if int(t * 2.0) % 2 else -1.0)
             move = (move[0] - move[1] * side_w, move[1] + move[0] * side_w)
             label += " |crate"
+        elif CORNER and target is not None and self.corner_spot(x, y, target, threats, zone_ok, t) is not None:
+            sp = self.spot
+            move = self.nav(x, y, sp[0], sp[1], t)
+            side_w = self.strafe * 0.4 * (1.0 if int(t * 2.0) % 2 else -1.0)
+            move = (move[0] - move[1] * side_w, move[1] + move[0] * side_w)
+            boost = energy > 40
+            label += " |corner"
         elif target is not None:
             td = math.hypot(target["pos"][0] - x, target["pos"][1] - y)
             tw = target["weapons"]
@@ -721,6 +731,46 @@ class Bot:
                 return mx, my
         d = math.hypot(zc[0] - x, zc[1] - y) + 1e-6
         return (zc[0] - x) / d, (zc[1] - y) / d
+
+    def corner_spot(self, x, y, target, threats, zone_ok, t):
+        """A nearby spot where fewer of the other enemies can see us (None = stay and fight here)."""
+        w = self.world
+        if w is None:
+            return None
+        if t - self.spot_t < 0.4:
+            sp = self.spot
+            return sp if sp is not None and math.hypot(sp[0] - x, sp[1] - y) > 4.0 else None
+        self.spot_t, self.spot = t, None
+        others = [e for e in threats if e is not target and math.hypot(e["pos"][0] - x, e["pos"][1] - y) < 230.0][:5]
+        if not others:
+            return None
+        tx, ty = target["pos"][0], target["pos"][1]
+
+        def cost(px, py):
+            c = 0.0
+            for e in others:
+                if w.los(e["pos"][0], e["pos"][1], px, py):
+                    c += 150.0 if "laser" in e["weapons"] else 100.0
+            if not w.los(tx, ty, px, py):
+                c += 50.0
+            return c + abs(math.hypot(px - tx, py - ty) - FAR_M) * 0.15
+
+        cur = cost(x, y)
+        if cur < 60.0:
+            return None
+        best, bc = None, cur - 40.0
+        off = self.rng.random() * 2 * PI
+        for r in (8.0, 16.0, 26.0, 38.0):
+            for k in range(10):
+                a = off + 2 * PI * k / 10
+                px, py = x + r * math.cos(a), y + r * math.sin(a)
+                if not w.free(px, py) or not zone_ok(px, py):
+                    continue
+                c = cost(px, py) + r * (0.6 if w.walk_clear(x, y, px, py, 3.0) else 1.2)
+                if c < bc:
+                    best, bc = (px, py), c
+        self.spot = best
+        return best
 
     def crate_goal(self, x, y, z, zone_ok, limit):
         """Nearest known ground-level crate further than shooting distance, or None."""
