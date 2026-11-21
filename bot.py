@@ -19,8 +19,9 @@ STYLE = "berserk"  # "normal", or for experiments: "pacifist" (never shoots mech
 RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
 FAR_M = 110.0
 LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in sight
-FETCH_M = 200.0  # how far to go for a better weapon mid-fight
+FETCH_M = 110.0  # how far to go for a better weapon mid-fight
 FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
+GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones for cubes while the enemy is far
 LASER_FIRST = False  # take laser upgrades before HP and armor
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
@@ -311,6 +312,25 @@ class Bot:
                 sc = tr["hp"] * (1.0 + math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) / 120.0)
                 if sc < best_score:
                     target, best_score = tr, sc
+
+        def crate_target(limit):
+            best, bd = None, limit
+            for cid, (pos, ts) in self.crates.items():
+                d = math.hypot(pos[0] - x, pos[1] - y)
+                if d < bd and cid in vis_crates and abs(pos[2] - z) < 6 and (w is None or w.los(x, y, pos[0], pos[1])):
+                    best, bd = pos, d
+            if best is None:
+                return None
+            return {"id": -1, "pos": best, "vel": (0.0, 0.0, 0.0), "ev": (0.0, 0.0, 0.0), "ch": self.crate_h * 0.5,
+                    "r": self.crate_r, "npc": False, "hp": 300.0, "weapons": (), "crate": True}
+
+        side = None  # a crate or drone the gun can work on while the real enemy is too far to hit reliably
+        if GREEDY and target is not None and math.hypot(target["pos"][0] - x, target["pos"][1] - y) > 60.0:
+            side = crate_target(70.0)
+            if side is None:
+                cand = [tr for tr in npcs if can_see(tr) and math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) < 70.0]
+                if cand:
+                    side = min(cand, key=lambda tr: tr["hp"])
         farm_ok = hpf > FARM_HP and not threats and t - self.last_threat_t > 3.0
         farm = None
         if target is None:
@@ -321,14 +341,7 @@ class Bot:
                 if (farm_ok and d < 90) or (d < 50 and t - self.last_hurt_t < 2.0 and not threats):
                     farm = tr
             if farm is None and farm_ok and self.crates:
-                best, bd = None, 70.0
-                for cid, (pos, ts) in self.crates.items():
-                    d = math.hypot(pos[0] - x, pos[1] - y)
-                    if d < bd and cid in vis_crates and abs(pos[2] - z) < 6 and (w is None or w.los(x, y, pos[0], pos[1])):
-                        best, bd = pos, d
-                if best is not None:
-                    farm = {"id": -1, "pos": best, "vel": (0.0, 0.0, 0.0), "ev": (0.0, 0.0, 0.0), "ch": self.crate_h * 0.5,
-                            "r": self.crate_r, "npc": False, "hp": 300.0, "weapons": (), "crate": True}
+                farm = crate_target(70.0)
         shoot = (target if STYLE != "pacifist" else None) or farm
 
         # ---- torso: aim and triggers
@@ -344,11 +357,12 @@ class Bot:
                     continue
                 k, ws = wp["kind"], wp["stats"]
                 if k == "gun":
-                    a, h, tof = self.aim_at(mx, my, mz, shoot, ws.get("speed", 252.0))
+                    gt = side or shoot
+                    a, h, tof = self.aim_at(mx, my, mz, gt, ws.get("speed", 252.0))
                     gun_aim = a
                     if aim is None:
                         aim = a
-                    tol = math.atan2(shoot["r"] * 0.9, max(h, 1.0)) + 0.015
+                    tol = math.atan2(gt["r"] * 0.9, max(h, 1.0)) + 0.015
                     if (h < ws.get("range", 230.0) * 0.97 and abs(wrap(a[0] - cur_yaw)) < tol
                             and abs(a[1] - cur_pitch) < tol + 0.02 and wp.get("reload", 0) <= 0):
                         fire[s] = True
@@ -520,6 +534,12 @@ class Bot:
                 side = self.strafe * 0.5 * (1.0 if int(t * 2.0) % 2 else -1.0)
                 move = (move[0] - move[1] * side, move[1] + move[0] * side)
             label += " |arm"
+        elif GREEDY and target is not None and len(near) <= 2 and hpf > 0.35 and self.crate_goal(x, y, z, zone_ok, 120.0) is not None:
+            cg = self.crate_goal(x, y, z, zone_ok, 120.0)
+            move = self.nav(x, y, cg[0], cg[1], t)
+            side_w = self.strafe * 0.5 * (1.0 if int(t * 2.0) % 2 else -1.0)
+            move = (move[0] - move[1] * side_w, move[1] + move[0] * side_w)
+            label += " |crate"
         elif target is not None:
             td = math.hypot(target["pos"][0] - x, target["pos"][1] - y)
             tw = target["weapons"]
@@ -672,6 +692,20 @@ class Bot:
                 return mx, my
         d = math.hypot(zc[0] - x, zc[1] - y) + 1e-6
         return (zc[0] - x) / d, (zc[1] - y) / d
+
+    def crate_goal(self, x, y, z, zone_ok, limit):
+        """Nearest known ground-level crate further than shooting distance, or None."""
+        w = self.world
+        best, bd = None, limit
+        for cid, (pos, ts) in self.crates.items():
+            d = math.hypot(pos[0] - x, pos[1] - y)
+            if d < 22.0 and (w is None or w.los(x, y, pos[0], pos[1])):
+                return None  # already close enough to one: shoot it from here
+            if w is not None and abs(pos[2] - w.ground(pos[0], pos[1])) > 3.5:
+                continue
+            if d < bd and zone_ok(pos[0], pos[1]):
+                best, bd = pos, d
+        return best
 
     def weapon_goal(self, x, y, z, kinds, zone_ok, limit):
         """Position of the best known weapon pickup worth swapping to within `limit` m, or None."""
