@@ -40,6 +40,8 @@ FINISH = False  # close to 20 m on a weak target; release the laser early once t
 IDLE_STILL = False  # nothing to fetch: stand still (silent) and spin the torso for all-round vision instead of roaming
 FIGHT_BOOST = False  # boost-strafe in fights, with energy hysteresis (stop at 28%, resume at 70%)
 CUBE_HURT_M = 30.0  # mid-fight cube radius when at or below half HP
+LASER_DODGE = False  # an enemy laser is charging at us: boost sideways out of its line, reversing halfway
+LASER_FIRST_TARGET = False  # prefer shooting enemies that carry a laser (lasers did ~3/4 of damage taken in the recorded match)
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
 if RANGE == "close":
@@ -121,6 +123,8 @@ class Bot:
         self.kill_spots = []
         self.spot = None
         self.hit_by = {}  # mech id -> last time it damaged us
+        self.charge_seen = {}  # mech id -> time we first saw its laser charging
+        self.dodge_side = 1.0
         self.boost_ok = True
         self.heard = None  # (x, y, t, rank) of the best recent sound made by someone we cannot see
         self.drop_ring_t = 0.0
@@ -381,6 +385,8 @@ class Bot:
                 continue
             if can_see(tr):
                 sc = tr["hp"] * (1.0 + math.hypot(tr["pos"][0] - x, tr["pos"][1] - y) / 120.0)
+                if LASER_FIRST_TARGET and "laser" in tr["weapons"]:
+                    sc *= 0.5
                 if sc < best_score:
                     target, best_score = tr, sc
 
@@ -742,6 +748,39 @@ class Bot:
                         goal = self.cover
                     label += " |rest"
             move = self.nav(x, y, goal[0], goal[1], t) if goal else (0.0, 0.0)
+
+        # ---- laser dodge: a charging beam is about to fire along its aim, which is locked on us
+        if LASER_DODGE and not outside:
+            for k_ in [k_ for k_ in self.charge_seen if not (k_ in self.tracks and self.tracks[k_]["charging"] and self.tracks[k_]["t"] == t)]:
+                del self.charge_seen[k_]
+            worst = None
+            for tr in threats:
+                if not tr["charging"] or "laser" not in tr["weapons"]:
+                    continue
+                ex, ey = tr["pos"][0], tr["pos"][1]
+                d = math.hypot(x - ex, y - ey)
+                if d > 290.0 or (w is not None and not w.los(ex, ey, x, y)):
+                    continue
+                miss = abs(wrap(tr["aim"][0] - math.atan2(y - ey, x - ex))) * d  # metres the aim line passes from us
+                if miss > 8.0:
+                    continue
+                if tr["id"] not in self.charge_seen:
+                    self.charge_seen[tr["id"]] = t
+                    self.dodge_side = 1.0 if rng.random() < 0.5 else -1.0
+                if worst is None or d < worst[1]:
+                    worst = (tr, d)
+            if worst is not None:
+                tr, d = worst
+                age = t - self.charge_seen[tr["id"]]
+                full = self.cfg["weapons"]["laser"].get("charge", 0.75)
+                side = self.dodge_side * (1.0 if age < 0.55 * full else -1.0)  # reverse to beat a shooter that leads us
+                ux, uy = (x - tr["pos"][0]) / (d + 1e-6), (y - tr["pos"][1]) / (d + 1e-6)
+                cand = (-uy * side, ux * side)
+                if w is not None and not (w.free(x + cand[0] * 5.0, y + cand[1] * 5.0) and zone_ok(x + cand[0] * 5.0, y + cand[1] * 5.0)):
+                    cand = (-cand[0], -cand[1])
+                move = cand
+                boost = energy > 5.0
+                label += " |dodge"
 
         # ---- unstick: commanded to move but not moving
         speed = math.hypot(me["vel"][0], me["vel"][1])
