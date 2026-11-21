@@ -15,7 +15,7 @@ import mechfight as mf
 from world import Search, World
 
 PI = math.pi
-STYLE = "berserk"  # "berserk" (never retreats), "normal", "smart" (disengage only when clearly losing), "pacifist"
+STYLE = "smart"  # "berserk" (never retreats), "normal", "smart" (disengage only when clearly losing), "pacifist"
 RANGE = "far"  # fight distance: "far" (FAR_M, scored best), "auto" (by loadout) or "close" (35 m)
 FAR_M = 110.0
 LOOT_IN_FIGHT = True  # walk to a known better weapon even while enemies are in sight
@@ -33,7 +33,7 @@ DROPS = "smart"  # supply drops: "on" (go early, wait in the ring), "smart" (no 
 ZONE_JET = False  # outside the zone and not closing on it: fly straight in over whatever is in the way
 SEEK = False  # nobody in sight: walk toward the last weapon sound heard instead of farming or roaming
 LASER_FIRST = True  # take laser upgrades before HP and armor (scored best)
-REST = False  # between fights: no crate/drone shooting (it resets regen), hold still out of sight until healed
+REST = True  # between fights: no crate/drone shooting (it resets regen), hold still out of sight until healed
 REST_HP = 0.92
 PURSUE = False  # walk to where a mech was last seen instead of roaming
 WEAPON_RANK = {"laser": 3, "lightning": 2, "mortar": 1}
