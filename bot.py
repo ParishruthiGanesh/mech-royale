@@ -24,7 +24,7 @@ FARM_HP = 0.75  # shoot crates and drones only above this HP fraction
 GREEDY = False  # mid-fight, walk to crates and spend gun fire on crates/drones for cubes while the enemy is far
 JINK = False  # flip strafe direction once per enemy bullet flight time, instead of at random 0.3-0.9 s
 LEAD_EMA = True  # lead far targets by their averaged velocity; False = always their current velocity
-PEACE_T = 0.0  # diagnostic only: hide and hold fire at mechs until this many seconds, then fight normally
+PEACE_T = 120.0  # diagnostic only: hide and hold fire at mechs until this many seconds, then fight normally
 STOP_T = None  # diagnostic only: stand still after this many seconds, so the score shows kills made by then
 CUBE_M = 30.0  # mid-fight, go for visible cubes within this distance
 KILL_LOOT = False  # after a kill, run to where the victim died to collect its cubes (and weapons)
